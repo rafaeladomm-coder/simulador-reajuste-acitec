@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulador de Reajuste – ACITEC</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body{font-family:'Inter','Segoe UI',system-ui,sans-serif}
+  input[type=number]{-moz-appearance:textfield}
+  input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{-webkit-appearance:none}
+</style>
+</head>
+<body class="bg-[#F5F6F7] text-slate-800 antialiased">
+
+<header class="h-12 bg-[#0B1F3A] text-slate-200 flex items-center px-4 gap-2 text-sm">
+  <div class="w-7 h-7 rounded-sm bg-[#0A6ED1] flex items-center justify-center text-white font-bold text-xs">A</div>
+  <span class="text-white font-semibold tracking-wide">ACITEC</span>
+  <span class="text-[10px] text-slate-400">Procurement Suite</span>
+  <span class="ml-auto text-xs text-slate-400">INBETTA · Orçamento 2026</span>
+</header>
+
+<main class="p-6 max-w-7xl mx-auto">
+  <div class="text-xs text-slate-500 mb-1">Ferramentas / Simuladores</div>
+  <div class="flex justify-between items-center mb-5">
+    <h1 class="text-xl font-semibold text-slate-900">Simulador de Reajuste</h1>
+    <div class="flex gap-2">
+      <button onclick="resetar()" class="border border-slate-300 bg-white hover:bg-slate-50 rounded-sm px-4 py-1.5 text-sm">Restaurar padrão</button>
+      <button onclick="exportar()" class="bg-[#0A6ED1] hover:bg-[#0858A8] text-white rounded-sm px-4 py-1.5 text-sm font-medium">Exportar CSV</button>
+    </div>
+  </div>
+
+  <!-- PARÂMETROS -->
+  <div class="bg-white border border-slate-200 rounded-sm p-4 mb-4 grid grid-cols-5 gap-4 text-sm">
+    <label class="flex flex-col gap-1"><span class="text-[11px] uppercase tracking-wider text-slate-500">Fornecedor</span>
+      <select id="forn" onchange="carregarPreset()" class="border border-slate-300 rounded-sm px-2 py-1.5"></select></label>
+    <label class="flex flex-col gap-1"><span class="text-[11px] uppercase tracking-wider text-slate-500">Gasto anual (R$)</span>
+      <input id="gasto" type="number" step="10000" class="border border-slate-300 rounded-sm px-2 py-1.5 text-right" oninput="calc()"></label>
+    <label class="flex flex-col gap-1"><span class="text-[11px] uppercase tracking-wider text-slate-500">Pleito do fornecedor (%)</span>
+      <input id="pleito" type="number" step="0.1" class="border border-slate-300 rounded-sm px-2 py-1.5 text-right" oninput="calc()"></label>
+    <label class="flex flex-col gap-1"><span class="text-[11px] uppercase tracking-wider text-slate-500">Orçado (%)</span>
+      <input id="orcado" type="number" step="0.1" class="border border-slate-300 rounded-sm px-2 py-1.5 text-right" oninput="calc()"></label>
+    <label class="flex flex-col gap-1"><span class="text-[11px] uppercase tracking-wider text-slate-500">Contraproposta (%)</span>
+      <input id="contra" type="number" step="0.1" class="border border-slate-300 rounded-sm px-2 py-1.5 text-right" oninput="calc()"></label>
+  </div>
+
+  <!-- KPIs -->
+  <div id="kpis" class="grid grid-cols-5 gap-3 mb-4"></div>
+
+  <div class="grid grid-cols-3 gap-4">
+    <!-- COMPONENTES -->
+    <div class="col-span-2 bg-white border border-slate-200 rounded-sm">
+      <div class="px-4 py-3 border-b border-slate-200 flex justify-between items-center">
+        <span class="text-sm font-semibold">Composição de custo (CBD)</span>
+        <span id="somaPeso" class="text-xs"></span>
+      </div>
+      <table class="w-full text-sm">
+        <thead class="bg-[#F1F3F5] text-[11px] uppercase tracking-wider text-slate-500">
+          <tr><th class="px-4 py-2 text-left">Componente</th><th class="text-left">Índice de referência</th>
+          <th class="text-right">Peso (%)</th><th class="text-right">Variação (%)</th><th class="text-right pr-4">Contribuição</th></tr>
+        </thead>
+        <tbody id="comp" class="divide-y divide-slate-100"></tbody>
+        <tfoot class="bg-slate-50 font-semibold">
+          <tr><td class="px-4 py-2.5" colspan="4">Reajuste justo (CBD)</td><td id="totalJusto" class="text-right pr-4 text-[#0A6ED1]"></td></tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- COMPARATIVO -->
+    <div class="flex flex-col gap-4">
+      <div class="bg-white border border-slate-200 rounded-sm p-4">
+        <div class="text-sm font-semibold mb-4">Comparativo de cenários</div>
+        <div id="barras" class="space-y-3 text-xs"></div>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-sm p-4">
+        <div class="text-sm font-semibold mb-2">Recomendação</div>
+        <div id="reco" class="text-sm text-slate-600 leading-relaxed"></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-3">Reajuste justo = soma de (peso × variação do índice) de cada componente. Os pesos precisam somar 100%.</p>
+</main>
+
+<script>
+const base = [
+  { nome:"Combustível (Diesel)", idx:"ANP – Diesel S10", peso:35, var:6.5 },
+  { nome:"Mão de obra",          idx:"CCT Motoristas",   peso:25, var:7.2 },
+  { nome:"Manutenção",           idx:"IPCA",             peso:8,  var:4.4 },
+  { nome:"Pneus",                idx:"IPA – Pneus",      peso:6,  var:3.1 },
+  { nome:"Depreciação veículo",  idx:"FIPE Caminhões",   peso:10, var:2.5 },
+  { nome:"Seguro / Rastreio",    idx:"IGP-M",            peso:4,  var:3.8 },
+  { nome:"Pedágio",              idx:"ANTT",             peso:5,  var:5.0 },
+  { nome:"Administrativo",       idx:"IPCA",             peso:7,  var:4.4 }
+];
+const presets = {
+  "Bertolini": { gasto:4200000, pleito:10, orcado:6, contra:6.5 },
+  "Brix":      { gasto:3100000, pleito:12, orcado:6, contra:7.5 },
+  "CargoBR":   { gasto:950000,  pleito:9,  orcado:6, contra:7.0 },
+  "Carvalima": { gasto:5100000, pleito:15, orcado:6, contra:8.0 },
+  "CF Log":    { gasto:2800000, pleito:15, orcado:6, contra:9.0 }
+};
+let comps = [];
+const $ = id => document.getElementById(id);
+const num = id => parseFloat($(id).value) || 0;
+const pct = v => v.toFixed(2).replace(".", ",") + "%";
+const brl = v => v.toLocaleString("pt-BR",{style:"currency",currency:"BRL",maximumFractionDigits:0});
+
+$("forn").innerHTML = Object.keys(presets).map(f => `<option>${f}</option>`).join("");
+
+function carregarPreset() {
+  const p = presets[$("forn").value];
+  ["gasto","pleito","orcado","contra"].forEach(k => $(k).value = p[k]);
+  comps = base.map(c => ({...c}));
+  renderComp(); calc();
+}
+function resetar() { carregarPreset(); }
+
+function renderComp() {
+  $("comp").innerHTML = comps.map((c,i) => `
+    <tr class="hover:bg-slate-50">
+      <td class="px-4 py-2 font-medium">${c.nome}</td>
+      <td class="text-slate-500 text-xs">${c.idx}</td>
+      <td class="text-right"><input type="number" step="0.5" value="${c.peso}" oninput="upd(${i},'peso',this.value)" class="w-20 border border-slate-300 rounded-sm px-2 py-1 text-right"></td>
+      <td class="text-right"><input type="number" step="0.1" value="${c.var}" oninput="upd(${i},'var',this.value)" class="w-20 border border-slate-300 rounded-sm px-2 py-1 text-right"></td>
+      <td id="ct${i}" class="text-right pr-4"></td>
+    </tr>`).join("");
+}
+function upd(i, k, v) { comps[i][k] = parseFloat(v) || 0; calc(); }
+
+function kpi(t, v, sub, cor="text-slate-500", borda="border-l-[#0A6ED1]") {
+  return `<div class="bg-white border border-slate-200 rounded-sm p-4 border-l-4 ${borda}">
+    <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">${t}</div>
+    <div class="text-xl font-semibold mt-1 text-slate-900">${v}</div>
+    <div class="text-xs ${cor}">${sub}</div></div>`;
+}
+
+function calc() {
+  const somaPeso = comps.reduce((s,c) => s + c.peso, 0);
+  const justo = comps.reduce((s,c,i) => {
+    const ct = c.peso * c.var / 100;
+    const el = $("ct"+i); if (el) el.textContent = pct(ct);
+    return s + ct;
+  }, 0);
+  const gasto = num("gasto"), pleito = num("pleito"), orc = num("orcado"), contra = num("contra");
+  const gap = pleito - justo;
+  const avoid = gasto * (pleito - contra) / 100;
+  const desvOrc = gasto * (contra - orc) / 100;
+
+  $("totalJusto").textContent = pct(justo);
+  const ok = Math.abs(somaPeso - 100) < 0.01;
+  $("somaPeso").className = "text-xs " + (ok ? "text-emerald-600" : "text-red-600 font-semibold");
+  $("somaPeso").textContent = `Soma dos pesos: ${somaPeso.toFixed(1).replace(".",",")}%` + (ok ? "" : " – ajuste para 100%");
+
+  $("kpis").innerHTML =
+    kpi("Reajuste justo (CBD)", pct(justo), "Base técnica") +
+    kpi("Gap do pleito", (gap>0?"+":"") + pct(gap), gap>0 ? "Pleito acima do CBD" : "Pleito dentro do CBD",
+        gap>0?"text-red-600":"text-emerald-600", gap>0?"border-l-red-500":"border-l-emerald-500") +
+    kpi("Impacto do pleito", brl(gasto*pleito/100), "Ao ano, se aceito integralmente") +
+    kpi("Cost avoidance", brl(avoid), `Contraproposta de ${pct(contra)}`, "text-emerald-600", "border-l-emerald-500") +
+    kpi("Desvio vs. orçado", brl(desvOrc), desvOrc>0 ? "Acima do orçamento" : "Dentro do orçamento",
+        desvOrc>0?"text-red-600":"text-emerald-600", desvOrc>0?"border-l-amber-500":"border-l-emerald-500");
+
+  const cen = [
+    { n:"Orçado", v:orc, c:"bg-slate-400" },
+    { n:"CBD (justo)", v:justo, c:"bg-[#0A6ED1]" },
+    { n:"Contraproposta", v:contra, c:"bg-emerald-600" },
+    { n:"Pleito", v:pleito, c:"bg-red-500" }
+  ];
+  const max = Math.max(...cen.map(c => c.v), 1);
+  $("barras").innerHTML = cen.map(c => `
+    <div><div class="flex justify-between mb-1"><span class="text-slate-600">${c.n}</span>
+      <span class="font-semibold">${pct(c.v)} · ${brl(gasto*c.v/100)}</span></div>
+      <div class="h-2 bg-slate-100 rounded-sm"><div class="h-2 ${c.c} rounded-sm" style="width:${c.v/max*100}%"></div></div></div>`).join("");
+
+  let r;
+  if (gap <= 0) r = `O pleito de <b>${pct(pleito)}</b> está dentro do reajuste justo. <b>Aprovação recomendada.</b>`;
+  else if (contra < justo) r = `A contraproposta (<b>${pct(contra)}</b>) está abaixo do CBD (<b>${pct(justo)}</b>). Ela pode ser contestada; conte com espaço até <b>${pct(justo)}</b>.`;
+  else if (contra <= justo + 0.5) r = `A contraproposta está alinhada ao CBD. Ela evita <b>${brl(avoid)}</b> por ano em relação ao pleito. <b>Negociação bem embasada.</b>`;
+  else r = `A contraproposta passa o CBD em <b>${pct(contra-justo)}</b>. Busque chegar perto de <b>${pct(justo)}</b> para evitar mais <b>${brl(gasto*(contra-justo)/100)}</b> por ano.`;
+  if (!ok) r = `<span class="text-red-600">Os pesos somam ${somaPeso.toFixed(1)}%. Ajuste para 100% antes de usar o resultado.</span>`;
+  $("reco").innerHTML = r;
+}
+
+function exportar() {
+  const linhas = [["Componente","Indice","Peso %","Variacao %","Contribuicao %"],
+    ...comps.map(c => [c.nome, c.idx, c.peso, c.var, (c.peso*c.var/100).toFixed(2)])];
+  const justo = comps.reduce((s,c) => s + c.peso*c.var/100, 0);
+  linhas.push([], ["Fornecedor",$("forn").value],["Reajuste justo",justo.toFixed(2)],
+    ["Pleito",num("pleito")],["Contraproposta",num("contra")],["Gasto anual",num("gasto")]);
+  const csv = "\uFEFF" + linhas.map(l => l.join(";")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+  a.download = `simulacao_${$("forn").value}.csv`; a.click();
+}
+
+carregarPreset();
+</script>
+</body>
+</html>
